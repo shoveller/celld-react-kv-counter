@@ -1,0 +1,41 @@
+name: celld-react-kv-counter-r2
+
+# Run this file independently: docker compose -f compose.r2.yaml ...
+# It is not an override for compose.yaml.
+x-fleet-environment: &fleet-environment
+  CELLD_BUCKET: ${CELLD_BUCKET:?Set CELLD_BUCKET in .env.r2}
+  S3_ENDPOINT: ${S3_ENDPOINT:?Set S3_ENDPOINT in .env.r2}
+  AWS_REGION: ${AWS_REGION:-auto}
+  AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:?Set AWS_ACCESS_KEY_ID in .env.r2}
+  AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:?Set AWS_SECRET_ACCESS_KEY in .env.r2}
+
+services:
+  deploy:
+    build: .
+    profiles: [tools]
+    environment: *fleet-environment
+    command: [deploy, .]
+    restart: "no"
+
+  celld:
+    image: ghcr.io/denoland/celld:v0.6.3
+    init: true
+    environment:
+      <<: *fleet-environment
+      CELLD_WATCH: /var/lib/celld/state
+    command:
+      - --listen
+      - 0.0.0.0:8080
+      - --internal-listen
+      - 0.0.0.0:8081
+      - --advertise
+      - celld:8081
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - counter-fleet-data:/var/lib/celld
+    stop_grace_period: 60s
+    restart: "no"
+
+volumes:
+  counter-fleet-data:

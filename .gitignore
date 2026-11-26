@@ -1,0 +1,12 @@
+node_modules/
+dist/
+.celld/
+.wrangler/
+.env
+.env.*
+!.env.r2.example
+.dev.vars
+.dev.vars.*
+*.log
+.idea/
+data/

@@ -1,0 +1,13 @@
+name: celld-react-kv-counter
+
+services:
+  app:
+    build: .
+    init: true
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - /Users/cinos81/study/celld-react-kv-counter/data:/app/.celld
+    stop_grace_period: 60s
+#volumes:
+#  counter-dev-data:
