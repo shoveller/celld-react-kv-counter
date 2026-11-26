@@ -1,0 +1,14 @@
+{
+	servers {
+		protocols h1 h2
+	}
+}
+
+{$APP_DOMAIN} {
+	tls {
+		issuer acme {
+			disable_tlsalpn_challenge
+		}
+	}
+	reverse_proxy app:8080
+}
