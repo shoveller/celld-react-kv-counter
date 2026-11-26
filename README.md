@@ -173,6 +173,9 @@ docker compose --env-file .env.r2 -f compose.r2.yaml logs -f celld
 
 이 파일은 수동 배포·실행 절차를 보여주는 기반 예제입니다. `restart: "no"`이므로 프로세스가 종료되면 자동으로 다시 시작하지 않습니다. 상시 운영 시 공식 문서의 node lease 수명을 고려한 재시작 정책/supervisor를 추가해야 합니다. 단일 node는 매번 쓰기를 bucket에 저장한 뒤 성공 응답하므로 로컬 개발 모드보다 응답이 느릴 수 있습니다. [celld guarantees](https://celld.dev/docs/guarantees/)
 
+OCI에서 Cloudflare Tunnel 없이 Caddy로 직접 HTTPS를 제공하는 설정은
+[OCI 배포 안내](deploy/README.md)를 참고하세요.
+
 ## 8. KV 카운터의 동시성 한계
 
 증가는 다음 두 API 호출로 구성됩니다.
