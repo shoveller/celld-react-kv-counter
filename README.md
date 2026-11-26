@@ -212,6 +212,35 @@ pnpm server:logs
 bind Compose와 기본 Compose는 프로젝트 이름과 8080 포트를 공유하므로
 같은 호스트에서 전환할 때는 먼저 기존 구성을 중지합니다.
 
+### 로컬 R2 테스트를 마치고 OCI로 넘기기
+
+**OCI와 같은 R2 bucket을 쓰는 로컬 앱 컨테이너는 OCI 기동 전에 종료합니다.**
+이 레시피의 `app:8081`은 각 호스트의 Docker 네트워크 안에서만 유효합니다.
+로컬 node를 켜둔 채 OCI node를 시작하면 두 node가 같은 주소를 광고해
+카운터 API가 500을 반환하고 `remote RPC owner remained stale until the retry deadline`
+오류가 날 수 있습니다. `healthy`만으로 앱이 정상이라고 판단하지 마세요.
+
+로컬 R2 컨테이너를 실행한 **기기와 Docker context**에서 확인하고 종료합니다.
+
+```sh
+docker context show
+docker ps --filter name=celld-react-kv-counter
+pnpm server:handoff
+docker ps --filter name=celld-react-kv-counter-app-1
+```
+
+`server:handoff`는 앱 컨테이너만 SIGTERM으로 종료하고 최대 60초 기다립니다.
+Vault 잠금 해제나 Compose 환경변수는 필요 없으며 데이터와 Caddy는 보존합니다.
+컨테이너가 없다는 오류가 나면 다른 context에서 실행 중인지 확인합니다.
+`docker compose -p`로 프로젝트 이름을 바꿨다면 실제 app 컨테이너 이름으로
+`docker stop --timeout 60 <컨테이너 이름>`을 실행합니다.
+전체 구성 종료는 기존 `pnpm server:stop`을 사용합니다.
+
+일상 개발인 `pnpm dev`는 로컬 workerd를 사용하므로 이 문제와 별개입니다.
+`pnpm dev`를 시작해도 이전에 켜둔 R2 컨테이너가 자동으로 종료되지는 않습니다.
+로컬 R2 테스트는 OCI와 다른 전용 bucket을 쓰는 것이 안전합니다.
+이 명령을 OCI에서 실행하면 OCI 앱이 중지되므로 로컬 테스트 기기에서만 실행합니다.
+
 R2는 코드·정적 자산·KV 영속 상태를 보관하는 fleet bucket입니다.
 **workerd나 celld 로컬 개발 데이터는 R2로 자동 이전되지 않습니다.**
 실행 중인 node는 기본 30초 간격으로 새 배포를 확인합니다.

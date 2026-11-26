@@ -11,6 +11,7 @@
     "deploy": "rbw-env 'env/oci/celld-test.illuwa.click' -- sh -c 'docker compose --env-file /dev/null build deploy && docker compose --env-file /dev/null run --rm --no-deps deploy'",
     "server:start": "rbw-env 'env/oci/celld-test.illuwa.click' -- docker compose --env-file /dev/null up -d --wait --wait-timeout 180 app caddy",
     "server:stop": "rbw-env 'env/oci/celld-test.illuwa.click' -- docker compose --env-file /dev/null down",
+    "server:handoff": "docker stop --timeout 60 celld-react-kv-counter-app-1",
     "server:logs": "rbw-env 'env/oci/celld-test.illuwa.click' -- docker compose --env-file /dev/null logs -f app caddy",
     "cf-typegen": "wrangler types",
     "typecheck": "tsc --noEmit",

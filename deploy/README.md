@@ -71,6 +71,37 @@ OCI 보안 그룹과 호스트 방화벽에서 TCP 80/443을 허용합니다.
 Cloudflare DNS는 OCI 공인 IPv4를 가리키는 **DNS only A 레코드**를 사용합니다.
 공인 IP가 바뀌면 DNS도 갱신합니다.
 
+### 같은 R2 bucket을 사용한 로컬 테스트 종료
+
+**OCI node를 시작하기 전에 같은 bucket의 로컬 R2 앱을 정상 종료합니다.**
+이 단일 호스트 레시피는 `app:8081`을 광고하므로 다른 호스트의 node와
+그대로 함께 실행할 수 없습니다. 두 호스트가 같은 주소를 광고하면 OCI가
+`healthy`여도 카운터 API는 500과
+`remote RPC owner remained stale until the retry deadline` 오류를 낼 수 있습니다.
+
+다음 명령은 OCI가 아니라 **로컬 테스트를 실행한 기기와 Docker context**에서 실행합니다.
+
+```sh
+docker context show
+docker ps --filter name=celld-react-kv-counter
+pnpm server:handoff
+docker ps --filter name=celld-react-kv-counter-app-1
+```
+
+`server:handoff`는 `docker stop --timeout 60 celld-react-kv-counter-app-1`을
+실행해 앱만 정상 종료합니다. Vault·R2 자격증명은 필요 없으며 Caddy와
+저장 데이터는 삭제하지 않습니다. 종료 후 실행 중인 app이 없는지 확인하고,
+OCI 기동 후에는 health와 실제 카운터 API를 모두 검사합니다.
+다른 Compose 프로젝트 이름을 썼다면 실제 컨테이너 이름으로 종료합니다.
+종료 실패를 무시하거나 R2 lease·소유권 파일을 강제로 삭제하지 않습니다.
+
+일반 `pnpm dev`의 workerd는 R2 fleet node가 아니지만, 이를 시작해도 별도로
+켜둔 R2 컨테이너는 남습니다. 독립적인 로컬 R2 테스트에는 별도 bucket을 사용합니다.
+여러 호스트의 동시 운영이 필요하다면 고유하고 상호 접근 가능한 사설 광고 주소를
+구성해야 하며, 내부 포트 8081을 인터넷에 공개하지 않습니다.
+
+### OCI에서 실행
+
 Docker·Docker Compose와 rbw·rbw-env가 설치되고 Vault 잠금이 해제된 호스트에서 실행합니다.
 설정 검사는 값을 출력하지 않는 `config --quiet`를 사용합니다.
 
