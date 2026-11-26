@@ -4,10 +4,17 @@ services:
   app:
     build: .
     init: true
+    command: [dev, --host, 0.0.0.0, --port, "8080"]
     ports:
       - "127.0.0.1:8080:8080"
     volumes:
-      - /Users/cinos81/study/celld-react-kv-counter/data:/app/.celld
+      - ./data:/app/.celld
+      - ./worker:/app/worker:ro
+      - ./wrangler.jsonc:/app/wrangler.jsonc:ro
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8080/api/counter').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
     stop_grace_period: 60s
-#volumes:
-#  counter-dev-data:

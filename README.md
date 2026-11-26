@@ -13,7 +13,7 @@ Docker와 Docker Compose가 설치된 환경에서 압축을 풀고 실행합니
 ```sh
 unzip celld-react-kv-counter.zip
 cd celld-react-kv-counter
-docker compose up --build -d
+docker compose up --build -d --wait app
 docker compose logs -f app
 ```
 
@@ -37,7 +37,7 @@ docker compose logs -f app
 | `worker-configuration.d.ts` | `wrangler types`가 생성한 Env 및 런타임 타입 |
 | `vite.config.ts` | React 빌드와 로컬 Vite 개발 서버의 API 프록시 |
 | `Dockerfile` | Node에서 빌드한 후 celld 개발 모드 실행 |
-| `compose.yaml` | 로컬 학습용 단일 컨테이너와 데이터 볼륨 |
+| `compose.yaml` | Worker 자동 반영, API 준비 상태 검사, 로컬 데이터 디렉터리를 연결한 개발 컨테이너 |
 | `compose.r2.yaml` | R2 bucket을 쓰는 별도의 배포 및 node 실행 예제 |
 | `.env.r2.example` | R2 설정값 예시. 실제 키는 포함하지 않음 |
 | `package-lock.json` | npm 의존성 버전과 무결성 고정 |
@@ -106,33 +106,45 @@ React는 상대 URL `/api/counter`를 호출하므로 기본 실행에서는 COR
 
 ## 5. 데이터 보관과 수정 후 실행
 
-celld 개발 모드는 `.celld/dev`에 로컬 상태를 보관합니다. Compose는 이를 포함하는 `/app/.celld`를 named volume에 연결합니다. [개발 모드와 상태 저장](https://celld.dev/docs/#develop-an-application-locally)
+celld 개발 모드는 `.celld/dev`에 로컬 상태를 보관합니다. 개발용 Compose는 이를 포함하는 `/app/.celld`를 프로젝트의 `./data` 디렉터리에 연결합니다. `data/`는 Docker build context에서 제외합니다. [개발 모드와 상태 저장](https://celld.dev/docs/#develop-an-application-locally)
 
 ```sh
-# 중지 — 볼륨 유지
+# 중지 — data/ 유지
 docker compose down
 
 # 같은 프로젝트를 다시 실행
 docker compose up -d
 
-# 소스 수정 후 빌드 및 컨테이너 재생성 — 같은 볼륨 유지
-docker compose up --build -d
+# 의존성·Dockerfile·컨테이너의 React 정적 자산 갱신
+docker compose up --build -d --wait app
 ```
 
-값을 올린 뒤 `down`과 `up -d`를 실행하여 값이 유지되는지 직접 확인할 수 있습니다. `docker compose down -v`는 볼륨까지 삭제하므로 데이터도 지워집니다. celld의 `--clean` 옵션 역시 개발 데이터를 삭제하므로 기본 명령에 넣지 않았습니다.
+값을 올린 뒤 `down`과 `up -d`를 실행하여 값이 유지되는지 직접 확인할 수 있습니다. 현재 개발 구성은 bind mount이므로 `docker compose down -v`로도 `./data`는 삭제되지 않습니다. `data/`를 삭제하거나 celld의 `--clean`을 사용하면 개발 데이터가 삭제됩니다.
 
-기본 Compose 프로젝트 이름을 고정했기 때문에 같은 예제 디렉터리를 복제해도 같은 이름을 쓰면 기존 프로젝트/볼륨과 겹칠 수 있습니다. 별개의 실습 인스턴스에는 `docker compose -p 다른이름 ...`과 서로 다른 호스트 포트를 사용하세요.
+기본 Compose 프로젝트 이름을 고정했기 때문에 같은 예제 디렉터리를 복제해도 같은 이름을 쓰면 기존 컨테이너와 겹칠 수 있습니다. 별개의 실습 인스턴스에는 `docker compose -p 다른이름 ...`과 서로 다른 호스트 포트를 사용하세요.
 
 ## 6. React 화면을 빠르게 수정하기
 
-Docker의 API가 8080에서 실행 중인 상태에서, 호스트에 Node 24가 있다면 별도 터미널에서 다음을 실행합니다.
+호스트에 Node 24와 Docker가 있다면 다음을 실행합니다.
 
 ```sh
 npm ci
 npm run dev
 ```
 
-Vite가 표시하는 주소(기본 <http://localhost:5173>)로 접속합니다. `/api`는 `vite.config.ts`에서 `http://127.0.0.1:8080`으로 프록시합니다. React 소스 수정은 개발 화면에 반영됩니다. Worker 소스 수정은 Docker 이미지를 다시 빌드해 적용합니다.
+`npm run dev`는 개발용 celld 컨테이너를 빌드·실행하고 `/api/counter` 준비 상태가 확인된 뒤 Vite를 실행합니다. <http://localhost:5173>으로 접속합니다. 5173이 사용 중이면 다른 포트로 이동하지 않고 오류를 표시합니다.
+
+`/api`와 `/api/` 하위 경로는 `vite.config.ts`에서 `http://127.0.0.1:8080`으로 프록시합니다. React 수정은 Vite HMR로 반영됩니다. 개발용 Compose는 `worker/`와 `wrangler.jsonc`를 읽기 전용 bind mount하고 `--no-watch` 없이 celld를 실행하므로, Worker와 설정 수정은 celld가 감지해 재빌드·반영합니다.
+
+| 명령 | 역할 |
+| --- | --- |
+| `npm run dev` | API 준비 확인 후 Vite 프록시 개발 서버 실행 |
+| `npm run dev:proxy` | 이미 실행 중인 API를 사용하는 Vite만 실행 |
+| `npm run dev:server` | 개발용 API 서버 빌드·백그라운드 실행 및 준비 확인 |
+| `npm run dev:logs` | Worker 재빌드 및 API 로그 확인 |
+| `npm run dev:stop` | 개발용 컨테이너 중지·제거, `data/` 유지 |
+
+Vite에서 Ctrl+C를 눌러도 개발용 Docker 서버는 계속 실행됩니다. 종료하려면 `npm run dev:stop`을 실행합니다. `dist/`는 이미지에 포함되므로 8080에서 직접 제공하는 React 화면을 갱신하려면 `npm run dev:server`로 다시 빌드합니다. Worker가 `worker/` 밖의 파일을 import하도록 확장하면 해당 소스 경로도 개발용 mount에 추가해야 합니다.
 
 ## 7. R2를 쓰는 node 배포 예제
 
@@ -165,6 +177,18 @@ docker compose --env-file .env.r2 -f compose.r2.yaml up -d celld
 docker compose --env-file .env.r2 -f compose.r2.yaml logs -f celld
 ```
 
+호스트에서 npm 스크립트로 같은 절차를 실행할 수도 있습니다.
+
+```sh
+npm run dev:stop
+npm run deploy
+npm run server:start
+npm run server:logs
+# 서버 종료: npm run server:stop
+```
+
+`deploy`는 이미지 빌드와 R2 업로드를 수행합니다. `server:start`는 업로드된 배포를 실행할 celld 서버를 시작합니다. 두 명령은 분리되어 있으며 모두 준비된 `.env.r2`를 사용합니다. 기본 개발 서버와 R2 서버는 8080 포트를 공유하므로 전환 전에 기존 서버를 중지합니다. 배포 명령은 실제 R2에 쓰므로 로컬 개발에는 `dev` 계열 명령을 사용합니다.
+
 각 명령이 성공한 것을 확인하고 다음 명령을 실행합니다. `deploy` 컨테이너는 완료 후 종료됩니다. 런타임 컨테이너는 bucket에서 배포를 읽습니다. 새 소스를 배포하려면 `build deploy`와 `run --rm deploy`를 다시 실행합니다. 실행 중인 node는 기본 30초 간격으로 새 배포를 확인합니다. [배포 갱신](https://celld.dev/docs/#deploy-an-application)
 
 이 구성에서 React/Worker/KV 연산은 자신의 서버의 celld가 처리하며 R2는 fleet bucket 역할을 합니다. **개발 모드의 기존 KV 값은 R2로 자동 이전되지 않습니다.** R2 구성에서는 해당 bucket의 데이터를 사용합니다.
@@ -191,7 +215,7 @@ celld KV는 namespace 소유 cell에서 읽으므로 Cloudflare KV의 eventual c
 
 ## 9. 검증 범위
 
-이 예제를 작성한 환경에서 아래 검증은 통과했습니다.
+최초 예제 작성 환경에서 아래 검증은 통과했습니다.
 
 - `npm run build`: TypeScript 타입 검사와 Vite 프로덕션 빌드
 - `esbuild`의 Worker ESM 번들링
@@ -199,7 +223,17 @@ celld KV는 namespace 소유 cell에서 읽으므로 Cloudflare KV의 eventual c
 - 위 mock 환경에서 겹친 read/write 증가가 유실될 수 있음을 확인
 - 두 Compose YAML 구문 파싱과 공식 celld 문서에 대한 설정 검토
 
-검증 환경에 Docker가 없고 celld 바이너리를 확보하지 못하여 **Docker 이미지 빌드·컨테이너 기동·실제 celld KV 영속성·R2 배포는 실행 검증하지 못했습니다.** 위 검증이 celld 런타임 전체의 검증을 대신하지는 않습니다. 시작 후 4절 API 호출과 5절 재시작 확인을 수행하세요.
+최초 작성 환경에서는 Docker 실행 검증을 하지 못했습니다. 이후 개발 자동 반영 개선 시 아래 항목을 실제 확인했습니다.
+
+- `npm run build`: 타입 검사와 React 빌드 통과
+- `docker compose config --quiet`: 개발 설정 검사 통과
+- `docker compose --env-file .env.r2.example -f compose.r2.yaml config --quiet`: R2 예제 설정 검사 통과
+- `npm run dev:server`: Docker 이미지 빌드와 컨테이너 기동, API healthcheck 통과
+- Worker 응답에 임시 검증 헤더를 추가한 뒤 이미지 재빌드 없이 API 응답에서 확인하고, 원복 후 헤더 제거도 확인
+- `dev:proxy -- --port 5174`: React 페이지, `/api/counter` 프록시 및 미등록 API의 JSON 404 응답 확인. 기본 5173 포트가 사용 중일 때는 충돌 오류 확인
+- 검증 중 카운터 GET 값 `28` 유지. 검증용 Vite 프로세스는 종료
+
+R2 업로드·R2 서버 실행과 별도의 장애 복구·영속성 테스트는 수행하지 않았습니다.
 
 ## 공식 참고 문서
 
