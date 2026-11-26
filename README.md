@@ -41,11 +41,9 @@ flowchart LR
 | `worker-configuration.d.ts` | `wrangler types`가 생성한 Env 및 런타임 타입 |
 | `vite.config.ts` | React와 Cloudflare Vite 플러그인의 통합 개발·빌드 |
 | `Dockerfile` | Node에서 빌드한 후 celld 개발 모드 실행 |
-| `compose.yaml` | 빌드된 화면과 Worker를 celld에서 확인하는 선택적 로컬 컨테이너 |
-| `compose.r2.yaml` | R2 bucket을 쓰는 별도의 배포 및 node 실행 예제 |
-| `compose.oci.yaml` | OCI의 Caddy HTTPS와 R2 fleet bucket을 연결하는 배포·서버 구성 |
-| `.env.oci.example` | OCI 도메인·R2 접근 설정 예시 |
-| `.env.r2.example` | R2 설정값 예시. 실제 키는 포함하지 않음 |
+| `compose.yaml` | 기본 레시피: R2 fleet bucket과 공식 celld 서버, Caddy HTTPS |
+| `compose.bind.yaml` | 독립 bind 레시피: R2 없이 ./data에 로컬 저장 |
+| `.env.oci.example` | Vault에 등록할 도메인·R2 변수 참고 목록 |
 | `pnpm-lock.yaml` | pnpm 의존성 버전과 무결성 고정 |
 
 브라우저에서는 React가 실행됩니다. 개발 시 플러그인이, celld 확인 시 celld가 `/api/counter`를 Worker로 전달합니다. celld는 `dist/client/`의 HTML/CSS/JS를 제공합니다. Worker가 `env.COUNTER_KV`로 KV에 접근하며 KV 자격증명을 브라우저에 전달하지 않습니다.
@@ -116,13 +114,13 @@ Cloudflare Vite 개발 상태는 기본적으로 `.wrangler/` 아래에 보관�
 
 ```sh
 # 중지 — data/ 유지
-docker compose down
+docker compose -f compose.bind.yaml down
 
 # 같은 프로젝트를 다시 실행
-docker compose up -d
+docker compose -f compose.bind.yaml up -d
 
 # 소스·설정·의존성 변경 후 celld 확인 이미지 갱신
-docker compose up --build -d --wait app
+docker compose -f compose.bind.yaml up --build -d --wait app
 ```
 
 값을 올린 뒤 `down`과 `up -d`를 실행하여 값이 유지되는지 직접 확인할 수 있습니다. 현재 개발 구성은 bind mount이므로 `docker compose down -v`로도 `./data`는 삭제되지 않습니다. `data/`를 삭제하거나 celld의 `--clean`을 사용하면 개발 데이터가 삭제됩니다.
@@ -154,66 +152,70 @@ pnpm exec celld dev wrangler.jsonc --port 8080
 호스트에 celld를 설치하지 않고 확인하려면 기존 Docker 구성을 사용할 수 있습니다.
 
 ```sh
-docker compose up --build --abort-on-container-exit app
+docker compose -f compose.bind.yaml up --build --abort-on-container-exit app
 ```
 
 8080에서 확인하고 Ctrl+C로 중지합니다. 이미지 내부에서도 `pnpm build` 후 원본 `wrangler.jsonc`로 실행합니다. 소스 bind mount와 감시는 사용하지 않으며 변경 후 이미지를 다시 빌드합니다. Vite 개발 서버와는 독립된 확인 환경입니다.
 
-## 7. R2를 쓰는 node 배포 예제
-
-`compose.r2.yaml`은 기본 Compose와 합치는 override가 아니라 **별도로 실행하는 구성**입니다. 기존 개발 모드와 포트가 겹치므로 먼저 `docker compose down`으로 기본 구성을 중지합니다.
-
-전용 비공개 R2 bucket과 그 bucket에 읽기·쓰기가 가능한 S3 API 자격증명을 준비합니다. 코드와 KV 상태가 들어가는 bucket이므로 일반 정적 웹사이트처럼 공개하지 않습니다. [celld bucket 설정](https://celld.dev/docs/#configure-object-storage), [bucket 권한](https://celld.dev/docs/security/#protect-the-fleet-bucket)
+백그라운드 실행과 상태 준비 대기는 package.json 명령으로 실행할 수 있습니다.
 
 ```sh
-cp .env.r2.example .env.r2
+pnpm bind:start
+pnpm bind:logs
+# 종료: pnpm bind:stop
 ```
 
-`.env.r2`의 값을 실제 값으로 바꿉니다.
+`bind:start`는 이미지 빌드와 컨테이너 시작을 함께 수행합니다. 로그 보기의
+Ctrl+C는 서버를 중지하지 않으므로 종료할 때는 `bind:stop`을 사용합니다.
 
-```dotenv
-CELLD_BUCKET=s3://your-celld-counter-bucket
-S3_ENDPOINT=https://YOUR_ACCOUNT_ID.r2.cloudflarestorage.com
-AWS_REGION=auto
-AWS_ACCESS_KEY_ID=REPLACE_ME
-AWS_SECRET_ACCESS_KEY=REPLACE_ME
-```
+## 7. 기본 R2 레시피와 디렉터리 bind 레시피
 
-`.env.r2`는 git과 Docker build context에서 제외됩니다. 이 값들은 Compose가 배포/런타임 프로세스에 전달하며 React 번들에 넣지 않습니다. `celld deploy` 자체는 `.env`를 자동으로 읽지 않습니다. [배포 문서](https://celld.dev/docs/#deploy-an-application)
+기본 `compose.yaml`은 R2에 배포와 영속 상태를 저장하는 레시피입니다.
+`compose.bind.yaml`은 R2 없이 `./data:/app/.celld`를 연결하고 `celld dev`로
+실행하는 독립 레시피입니다. 실제 로컬 저장소는 `./data/dev`에 만들어집니다.
+두 파일을 `-f compose.yaml -f compose.bind.yaml`로 합치지 않습니다.
 
-배포 이미지를 빌드하고 Worker/정적 파일을 R2에 배포한 뒤 node를 실행합니다.
+| 항목 | 기본 compose.yaml | compose.bind.yaml |
+| --- | --- | --- |
+| 저장 기반 | R2 fleet bucket | 프로젝트의 ./data |
+| 실행 방식 | 공식 이미지의 celld fleet node | 프로젝트 이미지의 celld dev |
+| 클라우드 자격증명 | 필요 | 불필요 |
+| HTTPS | Caddy 포함 | 로컬 HTTP 8080 |
+
+R2 방식도 로컬 SQLite·복제 작업 상태가 필요하여 `./data/celld-r2`를 사용합니다.
+이 디렉터리는 R2를 대신하는 저장소가 아니며, bind 방식의 `./data/dev`와 다릅니다.
+
+| 서비스 | 역할 |
+| --- | --- |
+| `deploy` | 프로젝트 이미지에서 빌드된 Worker·정적 자산을 R2에 배포하고 종료 |
+| `app` | 공식 celld v0.6.3 이미지로 R2의 배포를 읽고 실행 |
+| `caddy` | HTTPS와 app으로의 리버스 프록시 |
+
+`.env.oci.example`을 참고해 Vault의 정확한 폴더
+`env/oci/celld-test.illuwa.click`에 도메인·R2 bucket·S3 API 자격증명을
+변수별 Secure Note로 등록합니다. 이름은 변수명, Notes 첫 줄은 값입니다.
+자세한 준비·실행 순서는 [OCI 배포 안내](deploy/README.md)를 따릅니다.
 
 ```sh
-docker compose --env-file .env.r2 -f compose.r2.yaml build deploy
-docker compose --env-file .env.r2 -f compose.r2.yaml run --rm deploy
-docker compose --env-file .env.r2 -f compose.r2.yaml up -d celld
-docker compose --env-file .env.r2 -f compose.r2.yaml logs -f celld
-```
-
-호스트에서 pnpm 스크립트로 같은 절차를 실행할 수도 있습니다.
-
-```sh
-docker compose -f compose.yaml stop app
+rbw unlock
+rbw sync
 pnpm deploy
 pnpm server:start
 pnpm server:logs
-# 서버 종료: pnpm server:stop
+# 종료: pnpm server:stop
 ```
 
-`deploy`는 이미지 빌드와 R2 업로드를 수행합니다. `server:start`는 업로드된 배포를 실행할 celld 서버를 시작합니다. 두 명령은 분리되어 있으며 모두 준비된 `.env.r2`를 사용합니다. 기본 개발 서버와 R2 서버는 8080 포트를 공유하므로 전환 전에 기존 서버를 중지합니다. 배포 명령은 실제 R2에 쓰므로 로컬 개발에는 `dev` 계열 명령을 사용합니다.
+명령은 rbw-env의 프로세스 환경 주입 모드를 사용하고 기본 `compose.yaml`을 선택합니다.
+`--env-file /dev/null`로 기존 `.env` 자동 로드를 차단하며 실행용 환경 파일은 만들지 않습니다.
+각 명령이 성공한 뒤 다음 명령을 실행합니다. `deploy`는 R2에 실제로
+업로드하고, `server:start`는 celld와 Caddy를 실행합니다. 일상 개발은 `pnpm dev`입니다.
+bind Compose와 기본 Compose는 프로젝트 이름과 8080 포트를 공유하므로
+같은 호스트에서 전환할 때는 먼저 기존 구성을 중지합니다.
 
-각 명령이 성공한 것을 확인하고 다음 명령을 실행합니다. `deploy` 컨테이너는 완료 후 종료됩니다. 런타임 컨테이너는 bucket에서 배포를 읽습니다. 새 소스를 배포하려면 `build deploy`와 `run --rm deploy`를 다시 실행합니다. 실행 중인 node는 기본 30초 간격으로 새 배포를 확인합니다. [배포 갱신](https://celld.dev/docs/#deploy-an-application)
-
-이 구성에서 React/Worker/KV 연산은 자신의 서버의 celld가 처리하며 R2는 fleet bucket 역할을 합니다. **개발 모드의 기존 KV 값은 R2로 자동 이전되지 않습니다.** R2 구성에서는 해당 bucket의 데이터를 사용합니다.
-
-8080은 사용자 앱용 포트입니다. 8081은 fleet/operator용 내부 포트이며 호스트에 공개하지 않았습니다. 도메인 서비스에는 8080 앞에 TLS와 접근 제어를 처리하는 프록시를 배치합니다. 이 예제 API 자체에는 로그인이 없습니다. [listener 구분](https://celld.dev/docs/security/#separate-the-listeners)
-
-이 파일은 수동 배포·실행 절차를 보여주는 기반 예제입니다. `restart: "no"`이므로 프로세스가 종료되면 자동으로 다시 시작하지 않습니다. 상시 운영 시 공식 문서의 node lease 수명을 고려한 재시작 정책/supervisor를 추가해야 합니다. 단일 node는 매번 쓰기를 bucket에 저장한 뒤 성공 응답하므로 로컬 개발 모드보다 응답이 느릴 수 있습니다. [celld guarantees](https://celld.dev/docs/guarantees/)
-
-OCI에서 Cloudflare DNS only + Caddy HTTPS + R2 fleet bucket으로 실행하는 설정은
-[OCI 배포 안내](deploy/README.md)를 참고하세요.
-`.env.oci`를 준비한 뒤 `pnpm oci:deploy`, `pnpm oci:start` 순서로 실행합니다.
-기존 OCI 로컬 개발 저장소의 값은 R2로 자동 이전되지 않습니다.
+R2는 코드·정적 자산·KV 영속 상태를 보관하는 fleet bucket입니다.
+**workerd나 celld 로컬 개발 데이터는 R2로 자동 이전되지 않습니다.**
+실행 중인 node는 기본 30초 간격으로 새 배포를 확인합니다.
+[배포 갱신](https://celld.dev/docs/#deploy-an-application)
 
 ## 8. KV 카운터의 동시성 한계
 
@@ -244,8 +246,8 @@ celld KV는 namespace 소유 cell에서 읽으므로 Cloudflare KV의 eventual c
 최초 작성 환경에서는 Docker 실행 검증을 하지 못했습니다. 이전 프록시 개발 구성 개선 시에는 아래 항목을 확인했습니다(현재 구성과 구분).
 
 - 타입 검사와 React 빌드 통과(현재 명령: `pnpm build`)
-- `docker compose config --quiet`: 개발 설정 검사 통과
-- `docker compose --env-file .env.r2.example -f compose.r2.yaml config --quiet`: R2 예제 설정 검사 통과
+- 당시 로컬 개발 Compose 설정 검사 통과
+- 당시 별도 R2 최소 예제의 Compose 설정 검사 통과(현재는 OCI 구성으로 통합)
 - Docker 이미지 빌드와 컨테이너 기동, API healthcheck 통과
 - Worker 응답에 임시 검증 헤더를 추가한 뒤 이미지 재빌드 없이 API 응답에서 확인하고, 원복 후 헤더 제거도 확인
 - 5174 포트의 Vite에서 React 페이지, `/api/counter` 프록시 및 미등록 API의 JSON 404 응답 확인. 기본 5173 포트가 사용 중일 때는 충돌 오류 확인

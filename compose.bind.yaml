@@ -1,5 +1,7 @@
 name: celld-react-kv-counter
 
+# Standalone local-storage recipe; do not merge with compose.yaml.
+# celld dev stores its object store and state under ./data/dev.
 services:
   app:
     build: .
