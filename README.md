@@ -1,29 +1,33 @@
-# React + KV 카운터를 celld와 Docker로 실행하기
+# Cloudflare Vite로 개발하고 celld로 실행하는 React + KV 카운터
 
 공식 문서 확인일: 2026-11-26. celld 이미지는 `v0.6.3`으로 고정했습니다.
 
-React 화면, Worker HTTP API, celld KV를 연결하는 **학습용 프로젝트**입니다. 기본 구성은 Docker 컨테이너 하나이며 Cloudflare 계정이나 외부 데이터베이스가 필요하지 않습니다. `celld dev`가 로컬 object store와 단일 node를 시작합니다. [celld 개발 모드 문서](https://celld.dev/docs/#develop-an-application-locally)
+React 화면과 Worker HTTP API를 Cloudflare Vite 플러그인으로 개발하고, 같은 Worker 소스와 원본 `wrangler.jsonc`를 celld에서 실행하는 **학습용 프로젝트**입니다. 일상 개발에는 Node 24와 pnpm만 필요합니다. 로컬 workerd와 celld 확인에는 Cloudflare 로그인이나 클라우드 bucket이 필요하지 않습니다.
 
 여러 사용자가 동시에 증가시키는 정확한 공유 카운터가 필요하면 아래의 동시성 한계를 먼저 확인하세요. 이 예제는 KV 바인딩과 저장 흐름을 배우기 위한 것입니다.
 
 ## 1. 바로 실행
 
-Docker와 Docker Compose가 설치된 환경에서 압축을 풀고 실행합니다. Node와 celld를 호스트에 별도로 설치할 필요는 없습니다.
+프로젝트 루트에서 실행합니다.
 
 ```sh
-unzip celld-react-kv-counter.zip
-cd celld-react-kv-counter
-docker compose up --build -d --wait app
-docker compose logs -f app
+pnpm install --frozen-lockfile
+pnpm dev
 ```
 
-브라우저에서 <http://localhost:8080>을 엽니다. 로그 보기에서 Ctrl+C를 눌러도 백그라운드 컨테이너는 계속 실행됩니다.
+브라우저에서 <http://localhost:5173>을 엽니다. Cloudflare Vite 플러그인이 React와 로컬 workerd의 Worker·KV를 연결합니다. 종료는 Ctrl+C입니다. Docker나 별도의 API 프록시를 시작하지 않습니다.
 
 화면에서 `1 올리기`, `새로 읽기`, `0으로 초기화`를 사용할 수 있습니다. 서버의 KV key `count` 하나를 모든 브라우저가 공유합니다. 다른 브라우저의 변경은 `새로 읽기`나 페이지 새로고침으로 확인합니다.
 
-기본 포트는 호스트의 `127.0.0.1`에만 공개됩니다. 원격 VPS에서 실행했다면 SSH 터널 등으로 접근하거나 프록시를 구성하세요.
+celld에서 확인하는 방법은 6절을 참고하세요. workerd와 celld의 KV 데이터는 별개이며 자동으로 공유하거나 이전하지 않습니다.
 
-공식 celld 이미지는 Linux x86-64와 ARM64를 제공하므로 Apple Silicon에서도 플랫폼을 강제로 지정하지 않고 사용합니다. [공식 Docker 설명](https://github.com/denoland/celld#container)
+```mermaid
+flowchart LR
+  S["공통 Worker 소스·wrangler.jsonc"] --> V["pnpm dev: Vite + workerd"]
+  S --> C["celld dev wrangler.jsonc"]
+  B["pnpm build"] --> A["dist/client"]
+  A --> C
+```
 
 ## 2. 구성과 파일
 
@@ -35,14 +39,16 @@ docker compose logs -f app
 | `worker/index.ts` | KV에 접근하는 Worker API |
 | `wrangler.jsonc` | Worker, KV namespace, React 정적 파일 바인딩 |
 | `worker-configuration.d.ts` | `wrangler types`가 생성한 Env 및 런타임 타입 |
-| `vite.config.ts` | React 빌드와 로컬 Vite 개발 서버의 API 프록시 |
+| `vite.config.ts` | React와 Cloudflare Vite 플러그인의 통합 개발·빌드 |
 | `Dockerfile` | Node에서 빌드한 후 celld 개발 모드 실행 |
-| `compose.yaml` | Worker 자동 반영, API 준비 상태 검사, 로컬 데이터 디렉터리를 연결한 개발 컨테이너 |
+| `compose.yaml` | 빌드된 화면과 Worker를 celld에서 확인하는 선택적 로컬 컨테이너 |
 | `compose.r2.yaml` | R2 bucket을 쓰는 별도의 배포 및 node 실행 예제 |
+| `compose.oci.yaml` | OCI의 Caddy HTTPS와 R2 fleet bucket을 연결하는 배포·서버 구성 |
+| `.env.oci.example` | OCI 도메인·R2 접근 설정 예시 |
 | `.env.r2.example` | R2 설정값 예시. 실제 키는 포함하지 않음 |
-| `package-lock.json` | npm 의존성 버전과 무결성 고정 |
+| `pnpm-lock.yaml` | pnpm 의존성 버전과 무결성 고정 |
 
-브라우저에서는 React가 실행됩니다. celld가 `dist/`의 HTML/CSS/JS를 서빙하고 `/api/counter` 요청은 Worker에서 처리합니다. Worker가 `env.COUNTER_KV`로 KV에 접근합니다. KV 자격증명을 브라우저에 전달하지 않습니다.
+브라우저에서는 React가 실행됩니다. 개발 시 플러그인이, celld 확인 시 celld가 `/api/counter`를 Worker로 전달합니다. celld는 `dist/client/`의 HTML/CSS/JS를 제공합니다. Worker가 `env.COUNTER_KV`로 KV에 접근하며 KV 자격증명을 브라우저에 전달하지 않습니다.
 
 이 Dockerfile은 celld 자체를 컨테이너화합니다. 실행 중인 앱에는 Docker 소켓 연결이나 별도의 Node HTTP 서버가 필요하지 않습니다. 이미지에 남긴 Node와 `esbuild`는 `celld dev` 및 `celld deploy`의 Worker 빌드에 사용됩니다.
 
@@ -56,7 +62,7 @@ docker compose logs -f app
   "main": "worker/index.ts",
   "compatibility_date": "2026-01-01",
   "assets": {
-    "directory": "./dist",
+    "directory": "./dist/client",
     "binding": "ASSETS",
     "not_found_handling": "single-page-application",
     "run_worker_first": ["/api", "/api/*"]
@@ -70,14 +76,14 @@ docker compose logs -f app
 }
 ```
 
-`directory`는 Vite 빌드 결과입니다. `run_worker_first`는 API를 먼저 Worker로 보내어 SPA HTML 응답과 API 응답이 섞이지 않게 합니다. `ASSETS`는 Worker에서 `env.ASSETS.fetch(request)`로 정적 파일을 요청하는 바인딩입니다. [정적 파일 문서](https://celld.dev/docs/services/static-assets/)
+`directory`는 celld가 읽을 React 빌드 결과입니다. Cloudflare Vite 플러그인은 자체 client 빌드 경로를 사용합니다. `run_worker_first`는 API를 먼저 Worker로 보내어 SPA HTML 응답과 API 응답이 섞이지 않게 합니다. `ASSETS`는 Worker에서 `env.ASSETS.fetch(request)`로 정적 파일을 요청하는 바인딩입니다. [정적 파일 문서](https://celld.dev/docs/services/static-assets/)
 
 `binding`은 코드에서 접근하는 이름이고 `id`는 namespace의 식별자입니다. celld에서는 `id`에 임의 문자열을 사용할 수 있습니다. 이름을 바꾸면 다른 namespace를 읽게 되므로 기존 값이 사라진 것처럼 보일 수 있습니다. [KV 문서](https://celld.dev/docs/services/kv/)
 
 Worker의 `Env`는 `wrangler.jsonc`에서 생성합니다. 바인딩이나 호환성 설정을 변경하면 아래 명령으로 타입을 갱신하세요. 생성 파일은 직접 수정하지 않습니다. 타입 생성에는 Cloudflare 로그인이 필요하지 않습니다.
 
 ```sh
-npm run cf-typegen
+pnpm cf-typegen
 ```
 
 ## 4. API 동작
@@ -91,22 +97,22 @@ npm run cf-typegen
 POST body는 필요하지 않습니다. API 응답은 `Cache-Control: no-store`를 사용합니다. 알 수 없는 API는 404, 지원하지 않는 메서드는 405, 숫자 최대값은 409를 반환합니다.
 
 ```sh
-curl -sS http://localhost:8080/api/counter
-curl -sS -X POST http://localhost:8080/api/counter
-curl -sS http://localhost:8080/api/counter
+curl -sS http://localhost:5173/api/counter
+curl -sS -X POST http://localhost:5173/api/counter
+curl -sS http://localhost:5173/api/counter
 ```
 
 초기화는 값을 실제로 지우는 명령입니다.
 
 ```sh
-curl -sS -X DELETE http://localhost:8080/api/counter
+curl -sS -X DELETE http://localhost:5173/api/counter
 ```
 
 React는 상대 URL `/api/counter`를 호출하므로 기본 실행에서는 CORS 설정이 필요하지 않습니다. 요청 중에는 버튼을 비활성화합니다. 저장 요청의 응답을 받지 못한 경우 결과가 불확실할 수 있으므로 자동으로 재시도하지 않고 현재 값을 다시 읽도록 안내합니다.
 
 ## 5. 데이터 보관과 수정 후 실행
 
-celld 개발 모드는 `.celld/dev`에 로컬 상태를 보관합니다. 개발용 Compose는 이를 포함하는 `/app/.celld`를 프로젝트의 `./data` 디렉터리에 연결합니다. `data/`는 Docker build context에서 제외합니다. [개발 모드와 상태 저장](https://celld.dev/docs/#develop-an-application-locally)
+Cloudflare Vite 개발 상태는 기본적으로 `.wrangler/` 아래에 보관됩니다. 호스트의 celld 개발 모드는 `.celld/dev`를 사용하며, 선택적 Compose는 `/app/.celld`를 프로젝트의 `./data`에 연결합니다. 아래는 Docker로 celld를 확인할 때의 명령입니다. [개발 모드와 상태 저장](https://celld.dev/docs/#develop-an-application-locally)
 
 ```sh
 # 중지 — data/ 유지
@@ -115,7 +121,7 @@ docker compose down
 # 같은 프로젝트를 다시 실행
 docker compose up -d
 
-# 의존성·Dockerfile·컨테이너의 React 정적 자산 갱신
+# 소스·설정·의존성 변경 후 celld 확인 이미지 갱신
 docker compose up --build -d --wait app
 ```
 
@@ -123,28 +129,35 @@ docker compose up --build -d --wait app
 
 기본 Compose 프로젝트 이름을 고정했기 때문에 같은 예제 디렉터리를 복제해도 같은 이름을 쓰면 기존 컨테이너와 겹칠 수 있습니다. 별개의 실습 인스턴스에는 `docker compose -p 다른이름 ...`과 서로 다른 호스트 포트를 사용하세요.
 
-## 6. React 화면을 빠르게 수정하기
+## 6. 같은 소스와 설정을 celld에서 확인하기
 
-호스트에 Node 24와 Docker가 있다면 다음을 실행합니다.
+일상 개발은 `pnpm dev`로 진행합니다. React HMR과 Worker 변경 반영은 Cloudflare Vite 플러그인이 담당합니다. 5173이 사용 중이면 `pnpm dev --port 5174`로 포트를 지정합니다.
+
+celld를 설치한 호스트에서는 다음 두 명령으로 별도 확인합니다.
 
 ```sh
-npm ci
-npm run dev
+pnpm build
+pnpm exec celld dev wrangler.jsonc --port 8080
 ```
 
-`npm run dev`는 개발용 celld 컨테이너를 빌드·실행하고 `/api/counter` 준비 상태가 확인된 뒤 Vite를 실행합니다. <http://localhost:5173>으로 접속합니다. 5173이 사용 중이면 다른 포트로 이동하지 않고 오류를 표시합니다.
+`pnpm exec`는 프로젝트의 esbuild를 PATH에 넣습니다. celld v0.6.3은 [공식 설치 안내](https://celld.dev/docs/#install)를 따라 별도로 준비합니다. 화면은 <http://localhost:8080>이며 종료는 Ctrl+C입니다. Worker는 원본 `worker/index.ts`를 celld가 번들링하고 React 정적 파일은 `dist/client`에서 읽습니다. React 변경을 확인하려면 다시 빌드합니다.
 
-`/api`와 `/api/` 하위 경로는 `vite.config.ts`에서 `http://127.0.0.1:8080`으로 프록시합니다. React 수정은 Vite HMR로 반영됩니다. 개발용 Compose는 `worker/`와 `wrangler.jsonc`를 읽기 전용 bind mount하고 `--no-watch` 없이 celld를 실행하므로, Worker와 설정 수정은 celld가 감지해 재빌드·반영합니다.
+### 플러그인과 celld 사이의 최소 호환 처리
 
-| 명령 | 역할 |
-| --- | --- |
-| `npm run dev` | API 준비 확인 후 Vite 프록시 개발 서버 실행 |
-| `npm run dev:proxy` | 이미 실행 중인 API를 사용하는 Vite만 실행 |
-| `npm run dev:server` | 개발용 API 서버 빌드·백그라운드 실행 및 준비 확인 |
-| `npm run dev:logs` | Worker 재빌드 및 API 로그 확인 |
-| `npm run dev:stop` | 개발용 컨테이너 중지·제거, `data/` 유지 |
+- **루트 `wrangler.jsonc`를 직접 전달합니다.** 플러그인이 생성한 `dist/celld_react_kv_counter/wrangler.json`에는 celld가 지원하지 않는 키와 규칙이 있으므로 celld 입력으로 사용하지 않습니다.
+- 플러그인은 `dist/client/.assetsignore`를 생성하지만 celld v0.6.3은 이 파일을 거부합니다. `build` 마지막의 Node 한 줄이 이 생성 파일만 제거합니다.
+- 현재 생성 파일은 `wrangler.json`, `.dev.vars`를 제외하는 내용이며 두 파일은 client 산출물에 없습니다. 민감한 파일을 `public/`이나 client 산출물에 넣지 마세요. 사용자 정의 제외 규칙을 도입한다면 단순 제거 대신 배포 자산 구성을 재검토해야 합니다.
+- `pnpm exec vite build`는 마지막 호환 처리를 생략하므로 celld 확인 전에는 `pnpm build`를 사용합니다.
 
-Vite에서 Ctrl+C를 눌러도 개발용 Docker 서버는 계속 실행됩니다. 종료하려면 `npm run dev:stop`을 실행합니다. `dist/`는 이미지에 포함되므로 8080에서 직접 제공하는 React 화면을 갱신하려면 `npm run dev:server`로 다시 빌드합니다. Worker가 `worker/` 밖의 파일을 import하도록 확장하면 해당 소스 경로도 개발용 mount에 추가해야 합니다.
+### Docker를 사용하는 경우
+
+호스트에 celld를 설치하지 않고 확인하려면 기존 Docker 구성을 사용할 수 있습니다.
+
+```sh
+docker compose up --build --abort-on-container-exit app
+```
+
+8080에서 확인하고 Ctrl+C로 중지합니다. 이미지 내부에서도 `pnpm build` 후 원본 `wrangler.jsonc`로 실행합니다. 소스 bind mount와 감시는 사용하지 않으며 변경 후 이미지를 다시 빌드합니다. Vite 개발 서버와는 독립된 확인 환경입니다.
 
 ## 7. R2를 쓰는 node 배포 예제
 
@@ -177,14 +190,14 @@ docker compose --env-file .env.r2 -f compose.r2.yaml up -d celld
 docker compose --env-file .env.r2 -f compose.r2.yaml logs -f celld
 ```
 
-호스트에서 npm 스크립트로 같은 절차를 실행할 수도 있습니다.
+호스트에서 pnpm 스크립트로 같은 절차를 실행할 수도 있습니다.
 
 ```sh
-npm run dev:stop
-npm run deploy
-npm run server:start
-npm run server:logs
-# 서버 종료: npm run server:stop
+docker compose -f compose.yaml stop app
+pnpm deploy
+pnpm server:start
+pnpm server:logs
+# 서버 종료: pnpm server:stop
 ```
 
 `deploy`는 이미지 빌드와 R2 업로드를 수행합니다. `server:start`는 업로드된 배포를 실행할 celld 서버를 시작합니다. 두 명령은 분리되어 있으며 모두 준비된 `.env.r2`를 사용합니다. 기본 개발 서버와 R2 서버는 8080 포트를 공유하므로 전환 전에 기존 서버를 중지합니다. 배포 명령은 실제 R2에 쓰므로 로컬 개발에는 `dev` 계열 명령을 사용합니다.
@@ -197,8 +210,10 @@ npm run server:logs
 
 이 파일은 수동 배포·실행 절차를 보여주는 기반 예제입니다. `restart: "no"`이므로 프로세스가 종료되면 자동으로 다시 시작하지 않습니다. 상시 운영 시 공식 문서의 node lease 수명을 고려한 재시작 정책/supervisor를 추가해야 합니다. 단일 node는 매번 쓰기를 bucket에 저장한 뒤 성공 응답하므로 로컬 개발 모드보다 응답이 느릴 수 있습니다. [celld guarantees](https://celld.dev/docs/guarantees/)
 
-OCI에서 Cloudflare Tunnel 없이 Caddy로 직접 HTTPS를 제공하는 설정은
+OCI에서 Cloudflare DNS only + Caddy HTTPS + R2 fleet bucket으로 실행하는 설정은
 [OCI 배포 안내](deploy/README.md)를 참고하세요.
+`.env.oci`를 준비한 뒤 `pnpm oci:deploy`, `pnpm oci:start` 순서로 실행합니다.
+기존 OCI 로컬 개발 저장소의 값은 R2로 자동 이전되지 않습니다.
 
 ## 8. KV 카운터의 동시성 한계
 
@@ -220,23 +235,32 @@ celld KV는 namespace 소유 cell에서 읽으므로 Cloudflare KV의 eventual c
 
 최초 예제 작성 환경에서 아래 검증은 통과했습니다.
 
-- `npm run build`: TypeScript 타입 검사와 Vite 프로덕션 빌드
+- 타입 검사와 Vite 프로덕션 빌드(현재 명령: `pnpm build`)
 - `esbuild`의 Worker ESM 번들링
 - Worker 로직을 Node에서 실행하고 메모리 KV 바인딩으로 조회·증가·초기화, 상태 코드, 캐시 헤더, 숫자 범위와 정적 파일 fallback 확인
 - 위 mock 환경에서 겹친 read/write 증가가 유실될 수 있음을 확인
 - 두 Compose YAML 구문 파싱과 공식 celld 문서에 대한 설정 검토
 
-최초 작성 환경에서는 Docker 실행 검증을 하지 못했습니다. 이후 개발 자동 반영 개선 시 아래 항목을 실제 확인했습니다.
+최초 작성 환경에서는 Docker 실행 검증을 하지 못했습니다. 이전 프록시 개발 구성 개선 시에는 아래 항목을 확인했습니다(현재 구성과 구분).
 
-- `npm run build`: 타입 검사와 React 빌드 통과
+- 타입 검사와 React 빌드 통과(현재 명령: `pnpm build`)
 - `docker compose config --quiet`: 개발 설정 검사 통과
 - `docker compose --env-file .env.r2.example -f compose.r2.yaml config --quiet`: R2 예제 설정 검사 통과
-- `npm run dev:server`: Docker 이미지 빌드와 컨테이너 기동, API healthcheck 통과
+- Docker 이미지 빌드와 컨테이너 기동, API healthcheck 통과
 - Worker 응답에 임시 검증 헤더를 추가한 뒤 이미지 재빌드 없이 API 응답에서 확인하고, 원복 후 헤더 제거도 확인
-- `dev:proxy -- --port 5174`: React 페이지, `/api/counter` 프록시 및 미등록 API의 JSON 404 응답 확인. 기본 5173 포트가 사용 중일 때는 충돌 오류 확인
+- 5174 포트의 Vite에서 React 페이지, `/api/counter` 프록시 및 미등록 API의 JSON 404 응답 확인. 기본 5173 포트가 사용 중일 때는 충돌 오류 확인
 - 검증 중 카운터 GET 값 `28` 유지. 검증용 Vite 프로세스는 종료
 
 R2 업로드·R2 서버 실행과 별도의 장애 복구·영속성 테스트는 수행하지 않았습니다.
+
+Cloudflare Vite 전환 후 확인한 항목:
+
+- `pnpm build` 및 pnpm 기반 Docker 이미지 빌드 통과
+- 실제 workerd와 celld 양쪽에서 카운터 GET, no-store, 미등록 API의 JSON 404, 미지원 메서드 405, React HTML과 SPA fallback 확인
+- 임시 celld 컨테이너에서 POST → GET → DELETE로 KV 변경 확인. 기존 `data/`는 사용하지 않음
+- 원본 `wrangler.jsonc`와 `dist/client`의 직접 연결 확인
+- `.assetsignore`가 있을 때의 celld 실패와 빌드 후 제거를 통한 해결 확인
+- 호스트 celld 바이너리 실행은 미검증. celld 런타임 검증은 v0.6.3 Docker 이미지에서 수행
 
 ## 공식 참고 문서
 

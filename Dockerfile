@@ -11,15 +11,15 @@ COPY --from=celld-binary /usr/local/bin/celld /usr/local/bin/celld
 
 WORKDIR /app
 
-COPY package.json package-lock.json ./
-RUN npm ci --no-audit --no-fund
+COPY package.json pnpm-lock.yaml ./
+RUN corepack enable && pnpm install --frozen-lockfile
 
 COPY . .
-RUN npm run build
+RUN pnpm build
 
 ENV PATH="/app/node_modules/.bin:${PATH}"
 
 EXPOSE 8080
 
 ENTRYPOINT ["celld"]
-CMD ["dev", "--host", "0.0.0.0", "--port", "8080", "--no-watch"]
+CMD ["dev", "wrangler.jsonc", "--host", "0.0.0.0", "--port", "8080", "--no-watch"]

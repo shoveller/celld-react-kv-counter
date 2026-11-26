@@ -4,18 +4,18 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "npm run dev:server && npm run dev:proxy",
-    "dev:proxy": "vite --host 0.0.0.0",
-    "dev:server": "docker compose up --build -d --wait --wait-timeout 120 app",
-    "dev:stop": "docker compose down",
-    "dev:logs": "docker compose logs -f app",
+    "dev": "vite",
     "deploy": "docker compose --env-file .env.r2 -f compose.r2.yaml build deploy && docker compose --env-file .env.r2 -f compose.r2.yaml run --rm deploy",
     "server:start": "docker compose --env-file .env.r2 -f compose.r2.yaml up -d celld",
     "server:stop": "docker compose --env-file .env.r2 -f compose.r2.yaml down",
     "server:logs": "docker compose --env-file .env.r2 -f compose.r2.yaml logs -f celld",
+    "oci:deploy": "docker compose --env-file .env.oci -f compose.oci.yaml build deploy && docker compose --env-file .env.oci -f compose.oci.yaml run --rm --no-deps deploy",
+    "oci:start": "docker compose --env-file .env.oci -f compose.oci.yaml up -d --wait --wait-timeout 180 app caddy",
+    "oci:stop": "docker compose --env-file .env.oci -f compose.oci.yaml down",
+    "oci:logs": "docker compose --env-file .env.oci -f compose.oci.yaml logs -f app caddy",
     "cf-typegen": "wrangler types",
     "typecheck": "tsc --noEmit",
-    "build": "npm run typecheck && vite build",
+    "build": "tsc --noEmit && vite build && node -e \"require('node:fs').rmSync('dist/client/.assetsignore', { force: true })\"",
     "preview": "vite preview --host 0.0.0.0"
   },
   "dependencies": {
@@ -23,6 +23,7 @@
     "react-dom": "19.3.1"
   },
   "devDependencies": {
+    "@cloudflare/vite-plugin": "1.70.2",
     "@types/react": "19.3.3",
     "@types/react-dom": "19.3.0",
     "@vitejs/plugin-react": "6.3.0",
@@ -31,5 +32,11 @@
     "vite": "8.3.8",
     "wrangler": "4.168.0"
   },
-  "packageManager": "pnpm@10.33.2+sha512.a90faf6feeab71ad6c6e57f94e0fe1a12f5dcc22cd754db40ae9593eb6a3e0b6b12e3540218bb37ae083404b1f2ce6db2a4121e979829b4aff94b99f49da1cf8"
+  "packageManager": "pnpm@10.33.2+sha512.a90faf6feeab71ad6c6e57f94e0fe1a12f5dcc22cd754db40ae9593eb6a3e0b6b12e3540218bb37ae083404b1f2ce6db2a4121e979829b4aff94b99f49da1cf8",
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild",
+      "workerd"
+    ]
+  }
 }
