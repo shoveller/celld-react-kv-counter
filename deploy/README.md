@@ -5,6 +5,10 @@
 R2 없이 프로젝트의 `./data`에 저장하려면 독립 레시피 `compose.bind.yaml`을
 사용하며, 두 파일을 합치지 않습니다.
 
+로컬 저장을 유지하면서 R2를 비동기 백업 보관소로만 쓰려면
+[로컬 celld + R2 백업·복원](backup/README.md)을 따릅니다.
+이 구성은 아래 R2 fleet 레시피와 다릅니다.
+
 환경변수는 Vault의 정확한 폴더 `env/oci/celld-test.illuwa.click`에서
 rbw-env로 프로세스에 직접 주입합니다. 실행용 `.env` 파일은 만들지 않습니다.
 

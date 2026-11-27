@@ -1,0 +1,15 @@
+[Unit]
+Description=celld 로컬 상태의 R2 비동기 백업
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/works/celld-react-kv-counter
+Environment=CELLD_BACKUP_PYTHON=%h/works/celld-react-kv-counter/data/backup-venv/bin/python
+Environment=CELLD_BACKUP_SOURCE=data/counter-bind/dev/objects.sqlite3
+Environment=CELLD_BACKUP_WORK_DIR=data/backups
+ExecStart=%h/.local/bin/rbw-env env/oci/celld-test.illuwa.click -- /bin/bash %h/works/celld-react-kv-counter/scripts/backup-bind.sh
+UMask=0077
+Nice=10
+TimeoutStartSec=10min
+StandardOutput=journal
+StandardError=journal

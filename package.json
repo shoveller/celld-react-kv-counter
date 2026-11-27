@@ -8,6 +8,8 @@
     "bind:start": "docker compose -f compose.bind.yaml up --build -d --wait --wait-timeout 120 app",
     "bind:stop": "docker compose -f compose.bind.yaml down",
     "bind:logs": "docker compose -f compose.bind.yaml logs -f app",
+    "backup:run": "rbw-env 'env/oci/celld-test.illuwa.click' -- bash scripts/backup-bind.sh",
+    "backup:test": "python3 -m unittest discover -s tests -v",
     "deploy": "rbw-env 'env/oci/celld-test.illuwa.click' -- sh -c 'docker compose --env-file /dev/null build deploy && docker compose --env-file /dev/null run --rm --no-deps deploy'",
     "server:start": "rbw-env 'env/oci/celld-test.illuwa.click' -- docker compose --env-file /dev/null up -d --wait --wait-timeout 180 app caddy",
     "server:stop": "rbw-env 'env/oci/celld-test.illuwa.click' -- docker compose --env-file /dev/null down",
