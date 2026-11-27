@@ -10,3 +10,5 @@ dist/
 *.log
 .idea/
 data/
+__pycache__/
+*.pyc

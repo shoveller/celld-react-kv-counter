@@ -201,6 +201,7 @@ def _backup(args, client, bucket, prefix, work):
                 "format_version": 1, "celld_version": "v0.6.3", "revision": args.revision,
                 "created_at": created.isoformat(timespec="microseconds").replace("+00:00", "Z"),
                 "snapshot_key": snapshot_key, "sha256": digest, "size": size,
+                "manifest_key": manifest_key,
             }
             with snapshot.open("rb") as body:
                 client.put_object(Bucket=bucket, Key=snapshot_key, Body=body,
@@ -216,7 +217,7 @@ def _backup(args, client, bucket, prefix, work):
             client.put_object(Bucket=bucket, Key=prefix + "/latest.json", Body=encoded,
                               ContentType="application/json")
             _write_json(work / "last-success.json", manifest)
-    return {"status": "backed_up", "key": snapshot_key, "sha256": digest,
+    return {"status": "backed_up", "key": snapshot_key, "manifest_key": manifest_key, "sha256": digest,
             "created_at": manifest["created_at"]}
 
 

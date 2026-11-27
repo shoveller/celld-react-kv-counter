@@ -93,6 +93,8 @@ class BackupTests(unittest.TestCase):
         result = self.backup()
         manifest = self.latest()
         self.assertEqual(manifest["snapshot_key"], result["key"])
+        self.assertEqual(manifest["manifest_key"], result["manifest_key"])
+        self.assertIn(result["manifest_key"], self.s3.objects)
         self.assertEqual(self.run_cli("restore"), 0, self.last_error)
         with sqlite3.connect(self.destination / "objects.sqlite3") as restored:
             self.assertEqual(restored.execute("SELECT key FROM objects ORDER BY key").fetchall(),

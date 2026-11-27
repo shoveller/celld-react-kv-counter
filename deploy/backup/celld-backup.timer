@@ -1,0 +1,13 @@
+[Unit]
+Description=celld R2 백업을 15분 간격으로 실행
+
+[Timer]
+OnActiveSec=30s
+OnCalendar=*:0/15
+Persistent=true
+RandomizedDelaySec=30
+AccuracySec=1s
+Unit=celld-backup.service
+
+[Install]
+WantedBy=timers.target
